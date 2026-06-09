@@ -604,11 +604,18 @@ def main():
     with open(args.input, "r") as f:
         raw = json.load(f)
 
-    if args.mode == "pcap":
+    # Auto-detect format: enriched pcap_parser output (dict with summary+frames)
+    # takes priority over --mode flag — no manual flag needed for new format.
+    if isinstance(raw, dict) and "summary" in raw and "frames" in raw:
+        print("[*] Detected: enriched pcap_parser format")
+        ctx = process_pcap_data(raw)
+
+    elif args.mode == "pcap":
         if not isinstance(raw, list):
-            print("[!] Error: pcap mode expects a JSON array (output from pcap_parser.py)")
+            print("[!] Error: expected a JSON array or enriched dict from pcap_parser.py")
             return
         ctx = process_pcap_data(raw)
+
     else:
         if not isinstance(raw, dict):
             print("[!] Error: analyzer mode expects a JSON object (output from wifi_analyzer.py)")
