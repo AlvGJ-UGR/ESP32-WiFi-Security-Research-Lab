@@ -85,12 +85,60 @@ def process_analyzer_data(data: dict) -> dict:
     }
 
 
-def process_pcap_data(data: list) -> dict:
-    """Process output from pcap_parser.py (list of frames) into report-ready structures."""
-    type_counter     = defaultdict(int)
-    channel_counter  = defaultdict(int)   # pcap frames don't always have channel; skip
-    mac_counter      = defaultdict(int)
-    bssid_counter    = defaultdict(int)
+def process_pcap_data(data) -> dict:
+    """
+    Process output from pcap_parser.py into report-ready structures.
+
+    Accepts two formats:
+      - New enriched format: dict with 'summary' + 'frames' keys
+        (produced by: python pcap_parser.py --export frames.json)
+      - Legacy format: plain list of frame dicts (backwards compatible)
+    """
+    # ── New enriched format ──────────────────────────────────────
+    if isinstance(data, dict) and "summary" in data and "frames" in data:
+        s      = data["summary"]
+        frames = data["frames"]
+
+        channels    = s.get("frames_by_channel", {})
+        frame_types = dict(sorted(s.get("frames_by_type", {}).items(), key=lambda x: -x[1])[:12])
+        top_talkers = dict(s.get("top_talkers", [])[:8])
+        categories  = s.get("frames_by_category", {})
+        rssi_hist   = s.get("rssi_histogram", {})
+        data_rates  = s.get("data_rates", {})
+        duration_sec = s.get("capture_duration_sec", 0)
+        net_rows    = s.get("networks", [])
+
+        for n in net_rows:
+            if "beacons" not in n and "frames" in n:
+                n["beacons"] = n.pop("frames")
+
+        return {
+            "mode":             "pcapng",
+            "total_frames":     s.get("total_frames", len(frames)),
+            "total_networks":   s.get("total_networks", len(net_rows)),
+            "avg_rssi":         s.get("avg_rssi"),
+            "min_rssi":         s.get("min_rssi"),
+            "max_rssi":         s.get("max_rssi"),
+            "parsed_at":        s.get("parsed_at", "—"),
+            "capture_duration": f"{duration_sec // 60}m {duration_sec % 60}s" if duration_sec else "—",
+            "channels":         channels,
+            "categories":       categories,
+            "frame_types":      frame_types,
+            "rssi_hist":        rssi_hist,
+            "data_rates":       data_rates,
+            "top_talkers":      top_talkers,
+            "networks":         net_rows,
+        }
+
+    # ── Legacy format: plain list ────────────────────────────────
+    if not isinstance(data, list):
+        data = []
+
+    type_counter    = defaultdict(int)
+    channel_counter = defaultdict(int)
+    mac_counter     = defaultdict(int)
+    bssid_counter   = defaultdict(int)
+    rssi_values     = []
 
     for f in data:
         type_counter[f.get("frame_type", "Unknown")] += 1
@@ -100,12 +148,15 @@ def process_pcap_data(data: list) -> dict:
         bssid = f.get("bssid", "")
         if bssid and bssid != "??:??:??:??:??:??":
             bssid_counter[bssid] += 1
+        if f.get("rssi") is not None:
+            rssi_values.append(f["rssi"])
+        if f.get("channel"):
+            channel_counter[str(f["channel"])] += 1
 
     frame_types = dict(sorted(type_counter.items(), key=lambda x: -x[1])[:12])
     top_talkers = dict(sorted(mac_counter.items(), key=lambda x: -x[1])[:8])
     top_bssids  = dict(sorted(bssid_counter.items(), key=lambda x: -x[1])[:8])
 
-    # Fake category split from frame type names
     mgmt_keywords = {"Beacon", "Probe", "Association", "Authentication",
                      "Deauthentication", "Disassociation", "Reassociation"}
     ctrl_keywords = {"ACK", "RTS", "CTS", "Block Ack", "PS-Poll"}
@@ -120,22 +171,28 @@ def process_pcap_data(data: list) -> dict:
         else:
             categories["unknown"] += count
 
+    avg_rssi = round(sum(rssi_values)/len(rssi_values), 2) if rssi_values else None
+
     return {
-        "mode":           "pcap",
-        "total_frames":   len(data),
-        "total_networks": len(top_bssids),
-        "avg_rssi":       None,
-        "min_rssi":       None,
-        "max_rssi":       None,
-        "parsed_at":      datetime.now(timezone.utc).isoformat(),
-        "channels":       {},
-        "categories":     categories,
-        "frame_types":    frame_types,
-        "rssi_hist":      {},
-        "top_talkers":    top_talkers,
-        "networks":       [{"ssid": "—", "bssid": b, "channel": "—",
-                            "rssi_min": "—", "rssi_max": "—", "beacons": c}
-                           for b, c in top_bssids.items()],
+        "mode":             "pcap",
+        "total_frames":     len(data),
+        "total_networks":   len(top_bssids),
+        "avg_rssi":         avg_rssi,
+        "min_rssi":         min(rssi_values) if rssi_values else None,
+        "max_rssi":         max(rssi_values) if rssi_values else None,
+        "parsed_at":        datetime.now(timezone.utc).isoformat(),
+        "capture_duration": "—",
+        "channels":         dict(channel_counter),
+        "categories":       categories,
+        "frame_types":      frame_types,
+        "rssi_hist":        {},
+        "data_rates":       {},
+        "top_talkers":      top_talkers,
+        "networks":         [{"ssid": "—", "bssid": b, "channel": "—",
+                              "rssi_min": "—", "rssi_max": "—",
+                              "rssi_avg": "—", "encryption": "—",
+                              "network_type": "—", "beacons": c}
+                             for b, c in top_bssids.items()],
     }
 
 
@@ -225,17 +282,31 @@ def build_html(ctx: dict, source_file: str) -> str:
         tt_values = list(ctx["top_talkers"].values())
         charts_js += _bar_chart("talkersChart", tt_labels, tt_values, "#c44ff7", "Frames")
 
+    if ctx.get("data_rates"):
+        dr_labels = list(ctx["data_rates"].keys())
+        dr_values = list(ctx["data_rates"].values())
+        charts_js += _bar_chart("rateChart", dr_labels, dr_values, "#f7e24f", "Frames")
+
     # --- Network rows ---
     net_rows_html = ""
     for n in ctx["networks"]:
+        enc = n.get("encryption", "—") or "—"
+        enc_color = {
+            "WPA2": "#4ff7a0", "WPA": "#f7e24f",
+            "WEP":  "#f7914f", "Open": "#888"
+        }.get(enc, "#888")
+        avg_rssi = n.get("rssi_avg", "—")
         net_rows_html += f"""
         <tr>
-            <td>{n['ssid']}</td>
+            <td><strong>{n['ssid']}</strong></td>
             <td><code>{n['bssid']}</code></td>
-            <td>{n['channel']}</td>
-            <td>{n['rssi_min']}</td>
-            <td>{n['rssi_max']}</td>
-            <td>{n['beacons']}</td>
+            <td style="text-align:center">{n['channel']}</td>
+            <td style="text-align:center;color:#aaa">{n.get('rssi_min','—')}</td>
+            <td style="text-align:center;color:#aaa">{n.get('rssi_max','—')}</td>
+            <td style="text-align:center;color:#4f8ef7"><strong>{avg_rssi}</strong></td>
+            <td style="text-align:center"><span style="color:{enc_color};font-weight:600">{enc}</span></td>
+            <td style="text-align:center">{n.get('network_type','—')}</td>
+            <td style="text-align:right">{n['beacons']:,}</td>
         </tr>"""
 
     # --- RSSI section (only for analyzer mode) ---
@@ -269,6 +340,25 @@ def build_html(ctx: dict, source_file: str) -> str:
         <div class="stat-card">
             <div class="stat-value">{ctx['min_rssi']} / {ctx['max_rssi']}</div>
             <div class="stat-label">RSSI Range (dBm)</div>
+        </div>"""
+
+    # --- Capture duration stat card ---
+    duration_card = ""
+    if ctx.get("capture_duration") and ctx["capture_duration"] != "—":
+        duration_card = f"""
+        <div class="stat-card">
+            <div class="stat-value">{ctx['capture_duration']}</div>
+            <div class="stat-label">Capture Duration</div>
+        </div>"""
+
+    # --- Data rate section ---
+    rate_section = ""
+    if ctx.get("data_rates"):
+        rate_section = """
+        <div class="card" style="margin-bottom:1.5rem">
+            <h2>Data Rate Distribution</h2>
+            <p class="subtitle">PHY layer transmission rates observed (Mbps)</p>
+            <canvas id="rateChart" height="80"></canvas>
         </div>"""
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -438,6 +528,7 @@ def build_html(ctx: dict, source_file: str) -> str:
     <div class="stat-label">Networks Detected</div>
   </div>
   {rssi_cards}
+  {duration_card}
 </div>
 
 <div class="grid-2">
@@ -457,6 +548,8 @@ def build_html(ctx: dict, source_file: str) -> str:
 
 {rssi_section}
 
+{rate_section}
+
 <div class="card" style="margin-bottom:1.5rem">
   <h2>Top Transmitters</h2>
   <p class="subtitle">MAC addresses with the highest frame count</p>
@@ -469,8 +562,9 @@ def build_html(ctx: dict, source_file: str) -> str:
   <table>
     <thead>
       <tr>
-        <th>SSID</th><th>BSSID</th><th>Channel</th>
-        <th>RSSI Min</th><th>RSSI Max</th><th>Beacons</th>
+        <th>SSID</th><th>BSSID</th><th>CH</th>
+        <th>RSSI Min</th><th>RSSI Max</th><th>Avg RSSI</th>
+        <th>Encryption</th><th>Type</th><th style="text-align:right">Frames</th>
       </tr>
     </thead>
     <tbody>
