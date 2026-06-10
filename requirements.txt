@@ -1,26 +1,6 @@
-# ESP32 WiFi Security Research Lab — Python Dependencies
-#
-# The analyzer suite is intentionally built on Python's standard library only.
-# No pip install required. This file documents the minimum Python version
-# and optional tools that enhance the workflow.
-#
-# Minimum required: Python 3.10+
-#   (uses match-statement-free code but relies on dataclasses, typing, and
-#    structural pattern matching available from 3.10+)
-#
-# To verify your version:
-#   python3 --version
-
-# --- Optional: enhanced Wireshark integration ---
-# Uncomment if you want to open generated .pcap files programmatically:
-# pyshark>=0.6          # Wireshark/tshark Python wrapper
-
-# --- Optional: richer terminal output ---
-# Uncomment for colored CLI output in wifi_analyzer.py:
-# colorama>=0.4.6       # Cross-platform ANSI colors
-
-# --- Optional: notebook-based analysis ---
-# Uncomment if you want to run analysis in Jupyter:
-# jupyter>=1.0.0
-# matplotlib>=3.8.0
-# pandas>=2.0.0
+scapy>=2.5.0
+pyshark>=0.6
+pandas>=2.1.0
+matplotlib>=3.8.0
+rich>=13.7.0
+click>=8.1.7

@@ -1,177 +1,111 @@
-# ESP-IDF Environment Setup Guide
+# Setup Guide
 
-Step-by-step guide to set up the ESP-IDF development environment and get the firmware running on an ESP32-WROOM-32.
+## 1. Prerequisites
+
+### Hardware
+
+| Item | Notes |
+|------|-------|
+| ESP32-WROOM-32 (or DevKitC) | Any ESP32 with Wi-Fi |
+| USB-A to Micro-USB cable | Data cable, not charge-only |
+| Host PC (Linux / macOS / Windows) | For flashing and analysis |
+
+### Software
+
+| Tool | Version | Install |
+|------|---------|---------|
+| ESP-IDF | v5.1+ | [docs.espressif.com](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/) |
+| Python | 3.10+ | [python.org](https://www.python.org/) |
+| Wireshark | 4.x (optional) | [wireshark.org](https://www.wireshark.org/) |
 
 ---
 
-## Prerequisites
-
-- ESP32-WROOM-32 development board (or equivalent with WROOM-32 module)
-- USB-A to Micro-USB cable (data-capable, not charge-only)
-- Linux, macOS, or Windows 10/11
-- ~3 GB free disk space for the toolchain
-
----
-
-## 1. Install ESP-IDF
-
-### Linux / macOS
+## 2. Flash the firmware
 
 ```bash
-# Install dependencies (Ubuntu/Debian)
-sudo apt-get install git wget flex bison gperf python3 python3-pip \
-    python3-venv cmake ninja-build ccache libffi-dev libssl-dev \
-    dfu-util libusb-1.0-0
+# 1. Clone the repo
+git clone https://github.com/AlvGJ-UGR/ESP32-WiFi-Security-Research-Lab.git
+cd ESP32-WiFi-Security-Research-Lab/firmware
 
-# Clone ESP-IDF (v5.x recommended)
-mkdir -p ~/esp
-cd ~/esp
-git clone --recursive https://github.com/espressif/esp-idf.git
-cd esp-idf
+# 2. Source ESP-IDF environment
+. $IDF_PATH/export.sh        # Linux / macOS
+# or: $IDF_PATH\export.bat   # Windows
 
-# Run the install script
-./install.sh esp32
-
-# Set up environment variables (add to ~/.bashrc to persist)
-. ./export.sh
-```
-
-### Windows
-
-Download and run the [ESP-IDF Windows Installer](https://dl.espressif.com/dl/esp-idf/) — it handles the toolchain, Python, and Git automatically.
-
----
-
-## 2. Verify Installation
-
-```bash
-idf.py --version
-# Expected output: ESP-IDF v5.x.x
-```
-
----
-
-## 3. Clone and Build the Firmware
-
-```bash
-# Clone the upstream project (this repo is a study adaptation of it)
-git clone https://github.com/risinek/esp32-wifi-penetration-tool.git
-cd esp32-wifi-penetration-tool
-
-# Set the target chip
-idf.py set-target esp32
-
-# Build
+# 3. Build
 idf.py build
-```
 
-Build time is typically 2–5 minutes on first run (compiles the full ESP-IDF + project).
-
----
-
-## 4. Flash to the ESP32
-
-```bash
-# Replace /dev/ttyUSB0 with your actual port
-# Linux: usually /dev/ttyUSB0 or /dev/ttyACM0
-# macOS: /dev/cu.usbserial-XXXX
-# Windows: COMX
-
+# 4. Flash  (adjust port as needed: /dev/ttyUSB0, COM3, …)
 idf.py -p /dev/ttyUSB0 flash
-```
 
-**If flashing fails:**
-- Hold the BOOT button on the ESP32 board while the flash command starts
-- Check that the cable is data-capable (charge-only cables don't expose the serial interface)
-- On Linux, add your user to the `dialout` group: `sudo usermod -aG dialout $USER` then log out and back in
-
----
-
-## 5. Open the Serial Monitor
-
-```bash
+# 5. Open serial monitor (115200 baud)
 idf.py -p /dev/ttyUSB0 monitor
 ```
 
-Exit with `Ctrl+]`.
-
-To **save the output to a file** for analysis with `wifi_analyzer.py`:
-
-```bash
-idf.py -p /dev/ttyUSB0 monitor | tee monitor.log
+Expected output:
+```
+I (xxx) main: ESP32 Wi-Fi Research Lab – firmware starting
+I (xxx) main: Soft-AP started  SSID='ESP32-ResearchLab'  CH=1
+I (xxx) main: Web server running at http://192.168.4.1
+I (xxx) main: Packet sniffer active – monitor mode enabled
 ```
 
 ---
 
-## 6. Finding Your Serial Port
+## 3. Connect to the control interface
 
-### Linux
-```bash
-ls /dev/tty* | grep -E 'USB|ACM'
-# or
-dmesg | grep tty
-```
-
-### macOS
-```bash
-ls /dev/cu.*
-```
-
-### Windows
-
-Open Device Manager → Ports (COM & LPT) → look for "Silicon Labs CP210x" or "CH340".
+1. On your PC/phone, connect to Wi-Fi network **ESP32-ResearchLab** (password: `research1234`)
+2. Open a browser and navigate to **http://192.168.4.1**
+3. Use the dashboard to:
+   - Check capture status (`/api/status`)
+   - Download the current PCAP (`/api/pcap/download`)
+   - Trigger an AP scan (`/api/scan`)
+   - Reset the capture buffer (`POST /api/pcap/reset`)
 
 ---
 
-## 7. Combining Build + Flash + Monitor
+## 4. Analyse captures with Python
 
 ```bash
-idf.py -p /dev/ttyUSB0 build flash monitor
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Analyse a downloaded PCAP
+python analyzer/pcap_analyzer.py --file captures/capture.pcap
+
+# Export to CSV
+python analyzer/pcap_analyzer.py --file captures/capture.pcap --export csv
+
+# Generate plots
+python analyzer/pcap_analyzer.py --file captures/capture.pcap --plot
+```
+
+Reports and plots are saved to the `reports/` directory.
+
+---
+
+## 5. Open in Wireshark
+
+```bash
+wireshark captures/capture.pcap
+```
+
+Useful display filters for 802.11 analysis:
+
+```
+wlan.fc.type == 0          # Management frames only
+wlan.fc.type_subtype == 8  # Beacon frames
+wlan.fc.type_subtype == 4  # Probe Requests
+wlan.addr == aa:bb:cc:dd:ee:ff  # Frames from specific MAC
 ```
 
 ---
 
-## 8. Running the Python Analyzer
+## 6. Troubleshooting
 
-Once you have a `monitor.log` or a `.pcap`/`.pcapng` file from the ESP32:
-
-```bash
-cd analyzer/
-
-# From serial log:
-python3 wifi_analyzer.py --log ../monitor.log --export results.json
-python3 report_generator.py --input results.json --output report.html
-
-# From PCAP/PCAPNG:
-python3 pcap_parser.py --file capture.pcapng --export frames.json
-python3 report_generator.py --input frames.json --output report.html
-```
-
-Open `report.html` in any browser — no server required.
-
----
-
-## Troubleshooting
-
-| Problem | Likely Cause | Fix |
-|---|---|---|
-| `Permission denied: /dev/ttyUSB0` | User not in dialout group | `sudo usermod -aG dialout $USER` |
-| `Failed to connect to ESP32` | Boot mode issue | Hold BOOT button during flash |
-| `idf.py: command not found` | export.sh not sourced | Run `. ~/esp/esp-idf/export.sh` |
-| Build fails with Python error | Wrong Python version | ESP-IDF requires Python 3.8+ |
-| Monitor shows garbage characters | Wrong baud rate | Default is 115200, set with `-b 115200` |
-
----
-
-## Notes on Monitor Mode and Promiscuous Capture
-
-The ESP32 enters monitor (promiscuous) mode via `esp_wifi_set_promiscuous(true)` in the firmware. In this mode:
-
-- The radio receives **all 802.11 frames** on the configured channel, not just those addressed to the device
-- Each frame arrives via a callback with a `wifi_promiscuous_pkt_t` struct that includes:
-  - `rx_ctrl.rssi` — received signal strength in dBm
-  - `rx_ctrl.channel` — channel the frame was received on
-  - `payload[]` — raw 802.11 frame bytes
-- The ESP32 cannot receive on multiple channels simultaneously — channel hopping requires changing the channel in a loop (`esp_wifi_set_channel()`)
-
-This is fundamentally a **passive, receive-only** mode. The radio does not transmit during promiscuous capture.
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `idf.py: command not found` | IDF not sourced | Run `. $IDF_PATH/export.sh` |
+| Serial monitor garbled | Wrong baud rate | Check 115200 baud |
+| Can't connect to 192.168.4.1 | Not on ESP32 AP | Connect to `ESP32-ResearchLab` Wi-Fi first |
+| PCAP download is empty | No frames captured yet | Wait ~30 s or move near a Wi-Fi network |
+| Python `ModuleNotFoundError` | Missing dependencies | Run `pip install -r requirements.txt` |
