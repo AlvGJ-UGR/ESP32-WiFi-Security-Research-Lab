@@ -1,0 +1,57 @@
+# ── ESP-IDF build artifacts ─────────────────────────────────────────────────
+build/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+
+# ── ESP-IDF generated ────────────────────────────────────────────────────────
+*.bin
+*.elf
+*.map
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+
+# ── Captured data (never commit raw captures) ────────────────────────────────
+*.pcap
+*.pcapng
+*.hccapx
+*.cap
+captures/
+data/raw/
+
+# ── Jupyter ──────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Test outputs ─────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+reports/
