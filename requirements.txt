@@ -1,6 +1,26 @@
+# ESP32 WiFi Security Research Lab — Python Dependencies
+#
+# Core analyzer suite (pcap_parser.py, frame_parser.py, oui_lookup.py,
+# report_generator.py, wireshark_export.py) — stdlib only, no install needed.
+#
+# Install optional dependencies based on what you want to run:
+
+# ── pcap_analyzer.py (plots + CSV export) ────────────────────────
 scapy>=2.5.0
-pyshark>=0.6
-pandas>=2.1.0
+pandas>=2.0.0
 matplotlib>=3.8.0
-rich>=13.7.0
-click>=8.1.7
+
+# ── dashboard.py (Streamlit live dashboard) ──────────────────────
+streamlit>=1.35.0
+plotly>=5.20.0
+# pandas already listed above
+
+# ── Development / notebook analysis ──────────────────────────────
+# jupyter>=1.0.0
+
+# Install everything:
+#   pip install -r requirements.txt
+#
+# Install only what you need:
+#   pip install scapy pandas matplotlib       # for pcap_analyzer.py
+#   pip install streamlit plotly pandas       # for dashboard.py
