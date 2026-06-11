@@ -1,67 +1,85 @@
 # Changelog
 
-All notable changes and learning milestones in this project are documented here.
-
-Format loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+All notable changes and learning milestones are documented here.
 
 ---
 
 ## [Unreleased]
 
 ### In Progress
-- Python visualization dashboard for offline PCAP analysis
-- Modular firmware refactor with cleaner component separation
-- Wireshark export pipeline for `.pcapng` live analysis
+- Modular firmware refactor with sdkconfig presets
+
+### Planned
+- Jupyter notebook for interactive PCAP exploration
+- Wireshark live-feed polish (USBPcap integration on Windows)
 
 ---
 
-## [0.3.0] — Analyzer Suite Complete
+## [0.4.0] — Roadmap completion: OUI lookup · Streamlit dashboard · Wireshark export
 
 ### Added
-- `analyzer/report_generator.py` — generates self-contained HTML reports from JSON output
-  - 5 inline Chart.js visualizations: channel distribution, frame categories (doughnut),
-    frame type breakdown, RSSI histogram, top transmitters
-  - Networks table with SSID, BSSID, channel, RSSI range, encryption type, network type
-  - Capture duration stat card
-  - Data rate distribution chart (PHY layer Mbps breakdown)
-  - Dark-themed, zero-dependency HTML output (no server required)
-- Auto-format detection in `report_generator.py` — no `--mode` flag required for new format
-
-### Changed
-- `report_generator.py` now accepts both enriched dict format and legacy list format
-  from `pcap_parser.py`, with automatic detection based on JSON structure
+- `analyzer/oui_lookup.py` — MAC address → manufacturer name resolution
+  - Built-in table covering ~120 most common WiFi vendors
+  - Optional full IEEE OUI registry download (~35,000 entries) via `--update-db`
+  - `resolve()` / `resolve_many()` / `annotate_frames()` / `top_vendors()` public API
+  - `--stats <frames.json>` CLI: vendor breakdown from any capture file
+  - LRU cache for repeated lookups
+- `analyzer/dashboard.py` — Streamlit live dashboard
+  - 6 interactive Plotly charts (channel, category doughnut, frame types,
+    RSSI histogram, data rates, top transmitters)
+  - Networks table with vendor enrichment and encryption colour-coding
+  - RSSI scatter over time (frame-level data)
+  - Auto-refresh mode for live captures from the ESP32 HTTP endpoint
+  - File upload, local path, or direct ESP32 URL as data sources
+- `analyzer/wireshark_export.py` — Live Wireshark feed from the ESP32
+  - **pipe** mode — FIFO named pipe streamed into Wireshark (Linux/macOS)
+  - **stdout** mode — raw PCAP stream piped directly into Wireshark
+  - **file** mode — periodic polling + timestamped saves + auto-open (all platforms)
+  - `--open <file>` — one-click open any `.pcap` in Wireshark
+  - Auto-detects Wireshark binary on Linux, macOS, and Windows
+- `requirements.txt` — split into stdlib-only core vs. optional deps by feature
+- `CHANGELOG.md`, `CONTRIBUTING.md`, `.gitignore` added
 
 ### Learned
-- Chart.js API for dynamic chart rendering from Python-generated JSON
-- HTML/CSS design patterns for technical dashboards
-- How to make a fully self-contained single-file HTML report
+- IEEE OUI registry format and binary structure parsing
+- Streamlit session state and auto-refresh patterns
+- Named FIFO pipes on POSIX systems for inter-process streaming
+- PCAP record block structure for incremental append (ring-buffer diffing)
+- Plotly Express vs Graph Objects for custom dark-theme charts
 
 ---
 
-## [0.2.0] — PCAP/PCAPNG Binary Parsing
+## [0.3.0] — HTML Report Generator
 
 ### Added
-- `analyzer/pcap_parser.py` — zero-dependency binary parser for `.pcap` and `.pcapng` files
-  - Auto-detects file format from magic bytes (no flag needed)
-  - Full radiotap header parsing: RSSI (dBm), channel, frequency, data rate
-  - Beacon/Probe Response body parsing: SSID, beacon interval, encryption (WPA2/WPA/WEP/Open),
-    network type (Infrastructure / Ad-Hoc)
-  - PCAPNG block support: SHB, IDB, EPB, SPB, OPB
-  - Per-capture summary: RSSI histogram, channel distribution, top talkers,
-    data rate distribution, network table with avg/min/max RSSI
-  - `--filter`, `--limit`, `--summary-only`, `--export` CLI flags
+- `analyzer/report_generator.py` — self-contained HTML report from JSON output
+  - 6 Chart.js visualizations + networks table (SSID, encryption, avg RSSI)
+  - Auto-detects input format (enriched dict vs. legacy list)
+  - Zero runtime dependencies — opens in any browser without a server
+
+### Learned
+- Chart.js 4.x configuration for dynamic data
+- CSS custom properties and dark-theme dashboard design
+- Self-contained single-file HTML pattern
+
+---
+
+## [0.2.0] — Binary PCAP/PCAPNG Parser
+
+### Added
+- `analyzer/pcap_parser.py` — zero-dependency binary parser
+  - Auto format detection (`.pcap` magic `0xA1B2C3D4` vs PCAPNG SHB `0x0A0D0D0A`)
+  - Full radiotap header parsing: RSSI, channel, frequency, data rate
+  - Beacon/Probe Response body: SSID, encryption, beacon interval, network type
+  - PCAPNG blocks: SHB, IDB, EPB, SPB, OPB
 
 ### Fixed
-- SHB offset calculation bug in PCAPNG reader (4-byte misalignment causing all
-  subsequent blocks to be misread)
+- SHB offset calculation bug (4-byte misalignment in PCAPNG reader)
 
 ### Learned
 - PCAP global header and record header binary format (`struct` unpacking)
-- PCAPNG block structure: type + length-prefixed body + trailing length
-- Radiotap header layout and presence bitmap walking
-- IEEE 802.11 frame control field: type (2 bits) + subtype (4 bits) decoding
-- 802.11 Information Element (tagged parameter) structure: tag + length + data
-- RSN IE (tag 48) vs WPA vendor IE (tag 221, OUI 00:50:F2:01) for encryption detection
+- Radiotap header bitmap field walking with natural alignment padding
+- RSN IE (tag 48) vs vendor IE OUI `00:50:F2:01` for WPA/WPA2 detection
 - Frequency → channel mapping for 2.4 GHz and 5 GHz bands
 
 ---
@@ -69,36 +87,25 @@ Format loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [0.1.0] — Serial Log Analyzer
 
 ### Added
-- `analyzer/wifi_analyzer.py` — parses ESP32 serial monitor logs
-  - Regex-based `[FRAME]` and `[BEACON]` line parser
-  - Frame classification: management / control / data categories
-  - IEEE 802.11 frame type lookup table (0x00–0xC0)
-  - Per-capture stats: total frames, avg/min/max RSSI, channel distribution,
-    top talkers, discovered networks
-  - `--export` flag to dump structured JSON for downstream tools
-- Initial `analyzer/` folder structure
+- `analyzer/wifi_analyzer.py` — ESP32 serial monitor log parser
+  - `[FRAME]` / `[BEACON]` regex parsing
+  - Frame classification (management / control / data)
+  - RSSI stats, channel distribution, top talkers
 
 ### Learned
-- Python `struct`, `re`, `argparse`, `collections.defaultdict` for binary/text parsing
-- IEEE 802.11 frame type and subtype encoding
-- How ESP32 serial monitor output is structured in ESP-IDF
-- RSSI values and what signal strength ranges mean in practice
-  (> -50 dBm excellent, -50 to -70 good, -70 to -85 fair, < -85 poor)
+- IEEE 802.11 frame type/subtype encoding (FC bits 2–7)
+- ESP-IDF serial monitor log structure
+- RSSI signal strength reference ranges
 
 ---
 
 ## [0.0.1] — Project Initialization
 
 ### Added
-- Repository created as educational fork reference of
-  [esp32-wifi-penetration-tool](https://github.com/risinek/esp32-wifi-penetration-tool)
-- `README.md` with project overview, legal notice, architecture diagram,
-  hardware requirements, and learning objectives
-- `LICENSE` (MIT, consistent with upstream)
-- `docs/` folder initialized for technical notes
+- Repository as educational adaptation of esp32-wifi-penetration-tool
+- Initial README, LICENSE, docs/ folder
 
 ### Learned
-- ESP32-WROOM-32 hardware capabilities and limitations
-- ESP-IDF build system: `idf.py build / flash / monitor`
-- Difference between monitor mode and managed mode in WiFi adapters
-- Why ESP32 can do passive packet capture (raw 802.11 frame access via `esp_wifi_set_promiscuous`)
+- ESP32 promiscuous mode API (`esp_wifi_set_promiscuous`)
+- Difference between monitor mode and managed mode
+- ESP-IDF build system basics
