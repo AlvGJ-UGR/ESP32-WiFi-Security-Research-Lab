@@ -1,467 +1,256 @@
-<div align="center">
+# ESP32 WiFi Security Research Lab
 
-# 📡 ESP32 WiFi Security Research Lab
+> Plataforma de investigación en seguridad WiFi basada en el microcontrolador ESP32.
+> Captura tramas 802.11 en formato PCAP y las analiza offline con herramientas Python.
 
-**Passive IEEE 802.11 analysis platform — from ESP32 monitor-mode firmware to interactive dashboards**
-
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.1+-E7352C?style=flat-square&logo=espressif&logoColor=white)](https://docs.espressif.com/projects/esp-idf/en/latest/)
-[![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)]()
-[![Scope](https://img.shields.io/badge/Scope-Educational%20%2F%20Research-blue?style=flat-square)]()
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![University](https://img.shields.io/badge/UGR-Telecomunicaciones-red?style=flat-square)]()
-
-<br/>
-
-*Full-stack 802.11 analysis — from ESP32 firmware with HTTP interface*  
-*to Streamlit live dashboard, OUI vendor lookup, and Wireshark live-feed.*
-
-</div>
+![Python](https://img.shields.io/badge/Python-3.10%2B-cyan?style=flat-square&logo=python)
+![Platform](https://img.shields.io/badge/Platform-ESP32-blue?style=flat-square&logo=espressif)
+![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
 ---
 
-> ⚠️ **Legal & Ethical Notice** — This project is developed strictly for educational and research purposes within controlled environments. All experimentation is conducted exclusively on hardware owned by the developer, networks under the developer's direct control, or systems for which explicit written permission has been obtained. This repository does **not** endorse, support, or facilitate unauthorized access to networks, disruption of communications, or any activity prohibited by applicable law. Users are solely responsible for ensuring compliance with all applicable regulations.
+## Índice
+
+- [Descripción](#descripción)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Requisitos](#requisitos)
+- [Instalación](#instalación)
+- [Uso rápido — menú interactivo](#uso-rápido--menú-interactivo)
+- [Uso avanzado — CLI](#uso-avanzado--cli)
+- [Módulos](#módulos)
+  - [pcap\_analyzer.py](#pcap_analyzerpy)
+  - [visualizer.py](#visualizerpy)
+  - [menu.py](#menupy)
+- [Ejemplos de salida](#ejemplos-de-salida)
+- [Aviso legal](#aviso-legal)
 
 ---
 
-## 📋 Table of Contents
+## Descripción
 
-- [Overview](#-overview)
-- [Pipeline](#-pipeline)
-- [System Architecture](#-system-architecture)
-- [Analyzer Suite](#-analyzer-suite)
-- [Technical Specifications](#-technical-specifications)
-- [Hardware Requirements](#-hardware-requirements)
-- [Build & Flash](#-build--flash)
-- [HTTP Control Interface](#-http-control-interface)
-- [Python Analyzer](#-python-analyzer)
-- [Live Dashboard](#-live-dashboard)
-- [Wireshark Integration](#-wireshark-integration)
-- [OUI Vendor Lookup](#-oui-vendor-lookup)
-- [Features](#-features)
-- [Repository Structure](#-repository-structure)
-- [Roadmap](#-roadmap)
-- [Documentation](#-documentation)
-- [Attribution](#-attribution)
-- [License](#-license)
+Este laboratorio combina firmware ESP32 para captura pasiva de tráfico 802.11 con un
+conjunto de herramientas Python para análisis offline. A partir de un archivo PCAP el
+sistema extrae:
+
+- **Puntos de acceso** detectados (BSSID, SSID, canal, cifrado, beacons)
+- **Clientes WiFi** activos (MAC, tramas enviadas, tiempo de actividad)
+- **Estadísticas por canal** en bandas 2.4 GHz, 5 GHz y 6 GHz
+- **Exportación** a CSV y JSON
+- **Gráficas** de distribución de canales, cifrado, actividad de clientes y timeline
 
 ---
 
-## 🔭 Overview
-
-This repository is a hands-on research adaptation of [`esp32-wifi-penetration-tool`](https://github.com/risinek/esp32-wifi-penetration-tool), repurposed exclusively for **passive IEEE 802.11 protocol analysis** and embedded systems study.
-
-The project covers the full stack from firmware to visualization:
-
-- **Firmware layer** — ESP32 in promiscuous mode captures raw 802.11 frames, writes them to a 512 KB in-memory PCAP ring buffer, and serves them via HTTP
-- **Binary parsing layer** — Zero-dependency parsers for `.pcap` and `.pcapng` with full radiotap and beacon body extraction
-- **Analysis layer** — Frame classification, channel stats, AP enumeration, client activity, CSV export
-- **Visualization layer** — Streamlit live dashboard + self-contained HTML reports + direct Wireshark live-feed
-
-| Area | Topics Covered |
-|---|---|
-| 802.11 Protocol | Frame types/subtypes, beacon body, IEs, capability flags |
-| RF Analysis | RSSI, channel mapping, frequency lookup, data rate distribution |
-| Embedded Systems | ESP-IDF, FreeRTOS, promiscuous mode API, `wifi_promiscuous_pkt_t` |
-| Networking | HTTP server on ESP32, PCAP ring buffer, Soft-AP |
-| Binary Formats | PCAP/PCAPNG structure, radiotap bitmap walking, IE parsing |
-| Vendor Intelligence | IEEE OUI registry, MAC → manufacturer resolution |
-
----
-
-## ⚙️ Pipeline
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         ESP32 Firmware                               │
-│    Soft-AP  ·  Promiscuous sniffer  ·  PCAP ring buffer (512 KB)     │
-└───────────────────────┬──────────────────────────────────────────────┘
-                        │  HTTP GET /api/pcap/download
-                        ▼
-                  capture.pcap
-                        │
-        ┌───────────────┼───────────────┐
-        │               │               │
-        ▼               ▼               ▼
-pcap_analyzer.py  pcap_parser.py  wireshark_export.py
-· AP table        · Radiotap       · Pipe / stdout /
-· Client activity   parsing          file modes
-· CSV / plots     · SSID/encrypt  · Live Wireshark feed
-· OUI enrichment  · Avg RSSI      
-        │               │
-        └───────┬────────┘
-                │
-         frames.json
-                │
-         ┌──────┴──────────┐
-         │                 │
-         ▼                 ▼
-  dashboard.py      report_generator.py
-  Streamlit live    Self-contained HTML
-  6 Plotly charts   6 Chart.js charts
-  Auto-refresh      Zero dependencies
-  OUI table         Encryption colours
-```
-
----
-
-## 🏗️ System Architecture
-
-```
-              ┌──────────────────────────────────┐
-              │          ESP32 Device            │
-              │     (Embedded Firmware Layer)    │
-              └───────────────┬──────────────────┘
-                              │
-     ┌────────────────────────┼────────────────────────┐
-     │                        │                        │
-┌────────────┐    ┌───────────────────┐    ┌───────────────────┐
-│WiFi Scanner│    │  Packet Sniffer   │    │ Control Interface │
-│(AP enum.)  │    │  (Monitor Mode)   │    │ (HTTP @ .4.1)     │
-└─────┬──────┘    └────────┬──────────┘    └─────────┬─────────┘
-      │                    │                         │
-      └────────────────────┴─────────────────────────┘
-                           │
-           ┌───────────────┴─────────────────┐
-           │                                 │
-┌──────────────────────┐    ┌────────────────────────┐
-│  Frame Processing    │    │   PCAP Writer          │
-│  (802.11 parsing)    │    │   (ring buffer +       │
-│  frame_parser.py     │    │    /api/pcap/download) │
-└──────────────────────┘    └────────────────────────┘
-                           │
-       ┌───────────────────┼──────────────────────┐
-       │                   │                      │
-       ▼                   ▼                      ▼
-pcap_analyzer.py    dashboard.py       wireshark_export.py
-oui_lookup.py       (Streamlit)        (pipe/stdout/file)
-report_generator.py
-```
-
----
-
-## 🛠️ Analyzer Suite
-
-Five Python modules in `analyzer/`. The core (`pcap_parser`, `frame_parser`, `oui_lookup`, `report_generator`, `wireshark_export`) uses only the standard library. Optional deps listed in `requirements.txt`.
-
-### `pcap_analyzer.py` — Main CLI
-
-Full offline analysis of `.pcap`/`.pcapng`. AP table, client activity, channel distribution, CSV export, Matplotlib plots.
-
-```bash
-python3 analyzer/pcap_analyzer.py --file captures/capture.pcap
-python3 analyzer/pcap_analyzer.py --file captures/capture.pcap --export csv
-python3 analyzer/pcap_analyzer.py --file captures/capture.pcap --plot
-```
-
-### `frame_parser.py` — Per-frame Classifier
-
-Parses each frame into a `FrameInfo` dataclass. Extracted fields:
-
-| Field | Source | Notes |
-|---|---|---|
-| RSSI | Radiotap `DBM_SIGNAL` | Signed byte, dBm |
-| Channel | Radiotap `CHANNEL` | MHz → channel lookup |
-| Data Rate | Radiotap `RATE` | × 0.5 Mbps |
-| SSID | Beacon IE tag 0 | `<hidden>` if empty |
-| Encryption | RSN IE / vendor IE / cap flags | WPA2 / WPA / WEP / Open |
-| Network Type | Capability ESS/IBSS bits | Infrastructure / Ad-Hoc |
-| Src / Dst / BSSID | 802.11 MAC header | Offsets 4/10/16 |
-
-### `oui_lookup.py` — Vendor Resolution
-
-Resolves MAC address prefixes to manufacturer names.
-
-```bash
-python3 analyzer/oui_lookup.py AA:BB:CC:DD:EE:FF
-python3 analyzer/oui_lookup.py --update-db          # download full IEEE registry
-python3 analyzer/oui_lookup.py --stats frames.json  # vendor breakdown
-```
-
-### `report_generator.py` — HTML Dashboard
-
-Self-contained `.html` report from any JSON output. No server, no dependencies.
-
-| Visualization | Chart Type |
-|---|---|
-| Frames per Channel | Bar |
-| Frame Categories | Doughnut |
-| Frame Type Breakdown | Bar |
-| RSSI Distribution | Histogram (5 dBm buckets) |
-| Data Rate Distribution | Bar |
-| Top Transmitters | Bar |
-
-### `dashboard.py` — Streamlit Live Dashboard
-
-Interactive live dashboard with auto-refresh. See [Live Dashboard](#-live-dashboard).
-
-### `wireshark_export.py` — Wireshark Live-Feed
-
-Streams captures directly into Wireshark. See [Wireshark Integration](#-wireshark-integration).
-
----
-
-## 📊 Technical Specifications
-
-| Parameter | Value |
-|---|---|
-| **Target Hardware** | ESP32-WROOM-32 |
-| **Firmware Framework** | ESP-IDF v5.1+ / FreeRTOS |
-| **Capture Mode** | Promiscuous (monitor) mode |
-| **PCAP Buffer** | 512 KB in-memory ring buffer |
-| **HTTP Interface** | Soft-AP at `192.168.4.1` · 5 endpoints |
-| **Supported Formats** | `.pcap`, `.pcapng` |
-| **Core Dependencies** | None — Python stdlib only |
-| **Optional Deps** | Streamlit · Plotly · Pandas · Matplotlib · Scapy |
-| **Minimum Python** | 3.10+ |
-| **Report Format** | Streamlit dashboard + self-contained HTML |
-| **OUI Entries (built-in)** | ~120 common manufacturers |
-| **OUI Entries (full DB)** | ~35,000 (IEEE registry, optional download) |
-| **Frequency Bands** | 2.4 GHz (CH 1–14) · 5 GHz (CH 36–165) |
-| **ESP32 RX Sensitivity** | −97 dBm (datasheet) |
-
----
-
-## 🔩 Hardware Requirements
-
-| Component | Specification | Notes |
-|---|---|---|
-| Microcontroller | ESP32-WROOM-32 | WROOM-32D or WROOM-32U also compatible |
-| USB Cable | Micro-USB, data-capable | Charge-only cables won't expose serial |
-| Power Supply | 5V via USB or 3.3V external | External supply for standalone deployment |
-| Flash Storage | 4 MB built-in | Sufficient for firmware + SPIFFS |
-| Host Machine | Any OS with Python 3.10+ | For running the analyzer suite |
-
----
-
-## 🚀 Build & Flash
-
-Requires [ESP-IDF v5.1+](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/). See [`docs/setup_guide.md`](docs/setup_guide.md) for full environment setup.
-
-```bash
-cd firmware
-. $IDF_PATH/export.sh
-idf.py build
-idf.py -p /dev/ttyUSB0 flash
-idf.py -p /dev/ttyUSB0 monitor
-```
-
-Expected serial output:
-
-```
-I (xxx) main: Soft-AP started  SSID='ESP32-ResearchLab'  CH=1
-I (xxx) main: Web server running at http://192.168.4.1
-I (xxx) main: Packet sniffer active – monitor mode enabled
-```
-
----
-
-## 🌐 HTTP Control Interface
-
-Connect to **`ESP32-ResearchLab`** (password: `research1234`) and open `http://192.168.4.1`.
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/` | GET | HTML dashboard |
-| `/api/status` | GET | JSON: frame count, uptime |
-| `/api/pcap/download` | GET | Download capture as `.pcap` |
-| `/api/pcap/reset` | POST | Clear the ring buffer |
-| `/api/scan` | GET | Trigger AP scan |
-
----
-
-## 🐍 Python Analyzer
-
-```bash
-pip install -r requirements.txt
-
-python3 analyzer/pcap_analyzer.py --file captures/capture.pcap
-python3 analyzer/pcap_analyzer.py --file captures/capture.pcap --export csv
-python3 analyzer/pcap_analyzer.py --file captures/capture.pcap --plot
-
-# Or from pcap_parser for enriched JSON:
-python3 analyzer/pcap_parser.py --file capture.pcapng --export frames.json
-python3 analyzer/report_generator.py --input frames.json --output report.html
-```
-
----
-
-## 📊 Live Dashboard
-
-Interactive Streamlit dashboard with 6 Plotly charts, networks table, and RSSI timeline.
-
-```bash
-pip install streamlit plotly pandas
-
-# Load a local frames.json
-streamlit run analyzer/dashboard.py
-
-# Or point directly at the ESP32 (live mode with auto-refresh)
-streamlit run analyzer/dashboard.py -- --live http://192.168.4.1/api/pcap/download
-```
-
-The dashboard auto-detects input format and enriches vendor names via `oui_lookup.py`.
-
----
-
-## 🦈 Wireshark Integration
-
-Stream captures from the ESP32 directly into Wireshark for real-time analysis.
-
-```bash
-# Named pipe — Wireshark opens automatically (Linux/macOS)
-python3 analyzer/wireshark_export.py --mode pipe --url http://192.168.4.1/api/pcap/download
-
-# Pipe to Wireshark via stdout (all platforms)
-python3 analyzer/wireshark_export.py --mode stdout --url http://192.168.4.1/api/pcap/download \
-  | wireshark -k -i -
-
-# File polling — saves timestamped .pcap files and opens each in Wireshark
-python3 analyzer/wireshark_export.py --mode file --url http://192.168.4.1/api/pcap/download --interval 10
-
-# Open an existing capture in Wireshark
-python3 analyzer/wireshark_export.py --open captures/capture_20241115_143022.pcap
-```
-
----
-
-## 🔍 OUI Vendor Lookup
-
-Resolve MAC addresses to manufacturer names using the built-in curated table or the full IEEE registry.
-
-```bash
-# Resolve a single MAC
-python3 analyzer/oui_lookup.py AA:BB:CC:DD:EE:FF
-#   MAC    : AA:BB:CC:DD:EE:FF
-#   OUI    : AA:BB:CC
-#   Vendor : Apple, Inc.
-#   Source : built-in
-
-# Download the full IEEE OUI registry (~35,000 entries, ~5 MB, one-time)
-python3 analyzer/oui_lookup.py --update-db
-
-# Top vendors in a capture
-python3 analyzer/oui_lookup.py --stats frames.json --top 15
-```
-
-Built-in table covers ~120 most common manufacturers: Apple, Samsung, Intel, TP-Link, Netgear, Huawei, Xiaomi, Google, Amazon, Ubiquiti, ASUS, Espressif, Raspberry Pi, and more.
-
----
-
-## ✅ Features
-
-- [x] Wi-Fi AP enumeration (SSID, BSSID, channel, encryption)
-- [x] Passive packet capture in promiscuous/monitor mode
-- [x] In-memory PCAP ring buffer with HTTP download
-- [x] 802.11 frame classification (management / control / data)
-- [x] Python offline analyzer: AP table, client activity, CSV export
-- [x] Channel utilisation and encryption distribution plots (Matplotlib)
-- [x] Self-contained HTML report with 6 Chart.js visualizations
-- [x] MAC → vendor resolution (built-in table + optional full IEEE registry)
-- [x] Streamlit live dashboard with 6 Plotly charts and auto-refresh
-- [x] Wireshark live-feed (pipe / stdout / file polling modes)
-- [x] Lightweight HTTP dashboard at `192.168.4.1`
-- [ ] Modular firmware refactor with sdkconfig presets — *in progress*
-- [ ] Jupyter notebook for interactive PCAP exploration — *planned*
-
----
-
-## 📁 Repository Structure
+## Estructura del proyecto
 
 ```
 ESP32-WiFi-Security-Research-Lab/
 │
-├── analyzer/                         # Python analysis suite
-│   ├── pcap_analyzer.py              # Main CLI: parse + summarise + export
-│   ├── frame_parser.py               # Per-frame classification (FrameInfo)
-│   ├── pcap_parser.py                # Binary PCAP/PCAPNG parser + radiotap
-│   ├── oui_lookup.py                 # MAC → vendor resolution (OUI)
-│   ├── dashboard.py                  # Streamlit live dashboard
-│   ├── wireshark_export.py           # Wireshark live-feed (pipe/stdout/file)
-│   └── report_generator.py          # Self-contained HTML report generator
+├── analyzer/
+│   ├── pcap_analyzer.py   # Parser 802.11: APs, clientes, estadísticas
+│   └── visualizer.py      # Gráficas matplotlib (canal, cifrado, clientes, timeline)
 │
-├── docs/
-│   ├── setup_guide.md                # Flash, connect, analyse, troubleshoot
-│   └── 80211_reference.md            # 802.11 frame structure reference
+├── captures/              # Directorio de capturas PCAP (no versionado)
+├── reports/               # Salida: CSV, JSON, PNG (no versionado)
 │
-├── .github/
-│   ├── workflows/lint.yml            # Python syntax check on every push
-│   └── ISSUE_TEMPLATE/
-│       ├── bug_report.md
-│       └── feature_request.md
-│
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── requirements.txt
-├── .gitignore
-├── LICENSE
+├── menu.py                # Menú TUI interactivo (punto de entrada recomendado)
+├── requirements.txt       # Dependencias Python
 └── README.md
 ```
 
 ---
 
-## 🗺️ Roadmap
+## Requisitos
 
-| Status | Feature |
-|---|---|
-| ✅ Done | ESP32 firmware with promiscuous sniffer + PCAP ring buffer |
-| ✅ Done | HTTP interface at `192.168.4.1` with 5 endpoints |
-| ✅ Done | Python offline analyzer: AP table, client activity, CSV, plots |
-| ✅ Done | Binary PCAP/PCAPNG parser with radiotap + beacon body extraction |
-| ✅ Done | Self-contained HTML report with 6 Chart.js visualizations |
-| ✅ Done | MAC → vendor lookup (built-in table + full IEEE OUI registry) |
-| ✅ Done | Streamlit live dashboard with Plotly charts and auto-refresh |
-| ✅ Done | Wireshark live-feed (pipe / stdout / file modes) |
-| 🔄 In progress | Modular firmware refactor with sdkconfig presets |
-| 📋 Planned | Jupyter notebook for interactive PCAP exploration |
+- Python 3.10 o superior
+- ESP32 con firmware de captura (o cualquier archivo `.pcap` / `.pcapng`)
+- Sistema operativo: Linux, macOS o Windows
 
 ---
 
-## 📚 Documentation
+## Instalación
 
-| Document | Contents |
-|---|---|
-| [`docs/setup_guide.md`](docs/setup_guide.md) | Full ESP-IDF setup, flash, connect, troubleshoot |
-| [`docs/80211_reference.md`](docs/80211_reference.md) | 802.11 frame structure, IE table, deauth reason codes |
-| [`CHANGELOG.md`](CHANGELOG.md) | Version history and learning milestones |
-| Inline docstrings | Every Python module and function documented |
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/AlvGJ-UGR/ESP32-WiFi-Security-Research-Lab.git
+cd ESP32-WiFi-Security-Research-Lab
 
----
+# 2. (Opcional) Crear entorno virtual
+python -m venv .venv
+source .venv/bin/activate        # Linux / macOS
+.venv\Scripts\activate           # Windows
 
-## 🔗 Attribution
+# 3. Instalar dependencias
+pip install -r requirements.txt
+```
 
-This project builds upon the foundational work of:
+Dependencias principales:
 
-> **esp32-wifi-penetration-tool** by [@risinek](https://github.com/risinek)  
-> https://github.com/risinek/esp32-wifi-penetration-tool
-
-Full credit for the original firmware implementation belongs to the original author. This repository is an independent educational adaptation and is not affiliated with or endorsed by the original project.
-
----
-
-## 🎓 Academic Context
-
-This project is part of a personal learning path in **Telecommunications Engineering** at the **University of Granada**, covering:
-
-- Wireless communication systems (IEEE 802.11)
-- Embedded systems programming (ESP32 / ESP-IDF / FreeRTOS)
-- Network packet structure and binary protocol analysis
-- RF signal characterisation and passive monitoring techniques
+| Paquete      | Uso                              |
+|-------------|----------------------------------|
+| `scapy`     | Parseo de PCAP y tramas 802.11   |
+| `pandas`    | Exportación CSV                  |
+| `matplotlib`| Generación de gráficas           |
+| `numpy`     | Cálculos numéricos               |
+| `rich`      | Interfaz de terminal enriquecida |
 
 ---
 
-## 📜 License
+## Uso rápido — menú interactivo
 
-Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for full terms.
+El punto de entrada recomendado es el menú TUI. No requiere argumentos:
+
+```bash
+python menu.py
+```
+
+```
+  ███████╗███████╗██████╗ ██████╗ ██████╗
+  ██╔════╝██╔════╝██╔══██╗╚════██╗╚════██╗
+  █████╗  ███████╗██████╔╝ █████╔╝ █████╔╝
+  ██╔══╝  ╚════██║██╔═══╝ ██╔═══╝  ╚═══██╗
+  ███████╗███████║██║      ███████╗██████╔╝
+  ╚══════╝╚══════╝╚═╝      ╚══════╝╚═════╝
+
+  1  Analizar captura        Parsea un PCAP y muestra el resumen
+  2  Analizar directorio     Procesa todos los PCAPs de una carpeta
+  3  Exportar resultados     Exporta a CSV y/o JSON
+  4  Generar gráficas        Canal, cifrado, clientes, timeline…
+  5  Pipeline completo       Analizar + exportar + graficar en un paso
+  6  Ver reportes            Lista los archivos generados en /reports
+
+  7  Comprobar dependencias  Verifica si todos los paquetes están instalados
+  8  Instalar dependencias   Ejecuta pip install automáticamente
+  9  Acerca del proyecto     Información y créditos
+  q  Salir
+```
+
+El menú incluye un **selector de capturas interactivo** que lista todos los archivos
+`.pcap`/`.pcapng` de la carpeta `captures/` con su tamaño y fecha, y permite introducir
+una ruta manualmente si la captura está en otro directorio.
 
 ---
 
-<div align="center">
+## Uso avanzado — CLI
 
-**⭐ Star this repository if it was useful for your studies!**
+Para usuarios que prefieren la línea de comandos:
 
-*Active learning project — feedback and pull requests are welcome.*
+```bash
+# Analizar un archivo y mostrar resumen
+python -m analyzer.pcap_analyzer --file captures/sample.pcap
 
-</div>
+# Analizar un directorio completo
+python -m analyzer.pcap_analyzer --dir captures/
+
+# Exportar a CSV y JSON
+python -m analyzer.pcap_analyzer --file captures/sample.pcap --export csv json
+
+# Exportar y generar gráficas
+python -m analyzer.pcap_analyzer --file captures/sample.pcap --export csv json --plot
+
+# Especificar directorio de salida
+python -m analyzer.pcap_analyzer --file captures/sample.pcap --export json --out-dir mis_reportes/
+
+# Logging detallado
+python -m analyzer.pcap_analyzer --file captures/sample.pcap --verbose
+```
+
+---
+
+## Módulos
+
+### `pcap_analyzer.py`
+
+Parser offline de capturas 802.11. Lee cualquier archivo PCAP/PCAPNG producido por el
+firmware ESP32 (o por Wireshark, tcpdump, etc.) y extrae:
+
+- **AccessPoint** — BSSID, SSID, canal, cifrado (WPA3/WPA2/WPA/OPEN·WEP), conteo de
+  beacons, ventana temporal de actividad.
+- **Client** — MAC, BSSID de referencia, frames totales, ventana temporal.
+- **AnalysisResult** — contenedor tipado con estadísticas por canal y serialización
+  a dict / JSON lista para exportar.
+
+Detección de cifrado por elemento RSN (ID 48):
+- AKM Suite `00:0F:AC:08` (SAE) → **WPA3**
+- RSN presente sin SAE → **WPA2**
+- Vendor OUI `00:50:F2:01` → **WPA**
+- Sin RSN ni vendor → **OPEN/WEP**
+
+### `visualizer.py`
+
+Gráficas matplotlib con tema oscuro (`#0D0D1A`). Compatible con el dataclass
+`AnalysisResult` y con el formato dict heredado.
+
+| Función                        | Descripción                                        |
+|-------------------------------|----------------------------------------------------|
+| `plot_channel_utilization()`  | Barras por canal, separadas por banda              |
+| `plot_encryption_distribution()` | Donut con total de APs en el centro             |
+| `plot_client_activity()`      | Barras horizontales, top-N clientes por frames     |
+| `plot_beacon_timeline()`      | Área apilada: densidad de beacons a lo largo del tiempo |
+| `plot_dashboard()`            | Figura 2×2 con los cuatro plots combinados         |
+| `plot_all()`                  | Genera todos los plots anteriores                  |
+
+```python
+from analyzer.pcap_analyzer import parse_pcap
+from analyzer.visualizer import plot_all
+
+result = parse_pcap("captures/sample.pcap")
+plot_all(result, out_dir="reports/")
+```
+
+### `menu.py`
+
+Interfaz TUI construida con `rich`. Características:
+
+- Selector de capturas con tabla de archivos (nombre, tamaño, fecha)
+- Pipeline completo en un solo paso (analizar → exportar → graficar)
+- Verificación e instalación de dependencias desde el propio menú
+- Opción para abrir el directorio de reportes con el explorador del sistema
+
+---
+
+## Ejemplos de salida
+
+**Resumen en terminal:**
+
+```
+╭─────────────────────── 📡 PCAP Analysis Summary ────────────────────────╮
+│  File:             captures/sample.pcap                                  │
+│  Total frames:     4 821                                                 │
+│  Capture duration: 47.3 s                                                │
+│  Access Points:    12                                                    │
+│  Client MACs:      38                                                    │
+╰──────────────────────────────────────────────────────────────────────────╯
+
+╭─────────────────────────── Access Points (12) ───────────────────────────╮
+│  BSSID              SSID              Ch  Encryption  Beacons  Active(s) │
+│  AA:BB:CC:DD:EE:01  MiRed             6   WPA2         312      45.1     │
+│  AA:BB:CC:DD:EE:02  Vecinos_5G        36  WPA3          98      31.7     │
+│  …                                                                        │
+╰──────────────────────────────────────────────────────────────────────────╯
+```
+
+**Archivos generados en `reports/`:**
+
+```
+reports/
+├── sample_aps_20250613_142301.csv
+├── sample_clients_20250613_142301.csv
+├── sample_20250613_142301.json
+├── channel_utilization.png
+├── encryption_distribution.png
+├── client_activity.png
+├── beacon_timeline.png
+└── sample_dashboard.png
+```
+
+---
+
+## Aviso legal
+
+> Este proyecto es de uso **exclusivamente educativo e investigador**.
+> Úsalo únicamente en redes y dispositivos de tu propiedad o sobre los que tengas
+> autorización explícita por escrito.
+> El uso no autorizado de herramientas de análisis de tráfico inalámbrico puede
+> vulnerar legislación local e internacional.
+> Los autores no se responsabilizan del uso indebido de este software.
